@@ -32,8 +32,11 @@ export const Route = createRootRoute({
       { title: "Harlem Commonwealth Council" },
       { name: "description", content: "Get the right support for your minority or women-owned small business." },
       { property: "og:title", content: "Harlem Commonwealth Council" },
-      { property: "og:description", content: "One simple form to connect you with the right business support." },
+      { property: "og:description", content: "Get the right support for your minority or women-owned small business." },
       { property: "og:type", content: "website" },
+      { name: "twitter:title", content: "Harlem Commonwealth Council" },
+      { name: "twitter:description", content: "Get the right support for your minority or women-owned small business." },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
