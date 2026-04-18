@@ -11,6 +11,7 @@ export interface IntakeFormData {
   businessType: string;
   employeeCount: string;
   borough: string;
+  neighborhood: string;
 
   // Step 3
   supportNeeds: string[];
@@ -68,9 +69,28 @@ export const BUSINESS_STAGES = [
 ] as const;
 
 export const URGENCY_OPTIONS = [
+  { value: "days", label: "Need help in the next few days" },
   { value: "soon", label: "Need help soon" },
   { value: "months", label: "Need help in the next few months" },
   { value: "exploring", label: "Just exploring options" },
+] as const;
+
+export const BOROUGHS = [
+  { value: "Manhattan", label: "Manhattan" },
+  { value: "Brooklyn", label: "Brooklyn" },
+  { value: "Queens", label: "Queens" },
+  { value: "Bronx", label: "Bronx" },
+  { value: "Staten Island", label: "Staten Island" },
+] as const;
+
+export const EMPLOYEE_COUNTS = [
+  { value: "0", label: "Just me (0 employees)" },
+  { value: "1-2", label: "1–2" },
+  { value: "3-5", label: "3–5" },
+  { value: "6-10", label: "6–10" },
+  { value: "11-25", label: "11–25" },
+  { value: "26-50", label: "26–50" },
+  { value: "50+", label: "50+" },
 ] as const;
 
 export function determineTier(data: IntakeFormData): TierResult {
