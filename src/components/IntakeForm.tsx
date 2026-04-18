@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import type { IntakeFormData } from "@/lib/types";
-import { SUPPORT_OPTIONS, BUSINESS_STAGES, URGENCY_OPTIONS, determineTier } from "@/lib/types";
+import { SUPPORT_OPTIONS, BUSINESS_STAGES, URGENCY_OPTIONS, BOROUGHS, EMPLOYEE_COUNTS, determineTier } from "@/lib/types";
 import { getEmptyForm, saveFormProgress, loadFormProgress, clearFormProgress, addSubmission } from "@/lib/store";
 import { submitToAirtable } from "@/server/airtable";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,7 @@ export function IntakeForm({ onComplete }: IntakeFormProps) {
           businessType: form.businessType,
           employeeCount: form.employeeCount,
           borough: form.borough,
+          neighborhood: form.neighborhood,
           supportNeeds: form.supportNeeds,
           biggestChallenge: form.biggestChallenge,
           urgency: form.urgency,
@@ -249,17 +250,26 @@ export function IntakeForm({ onComplete }: IntakeFormProps) {
                   <Select value={form.employeeCount} onValueChange={(v) => update("employeeCount", v)}>
                     <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">Just me</SelectItem>
-                      <SelectItem value="1-2">1–2</SelectItem>
-                      <SelectItem value="3-5">3–5</SelectItem>
-                      <SelectItem value="6-10">6–10</SelectItem>
-                      <SelectItem value="11+">11+</SelectItem>
+                      {EMPLOYEE_COUNTS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="borough">Borough / Neighborhood</Label>
-                  <Input id="borough" placeholder="e.g. Harlem, East Harlem, Washington Heights" value={form.borough} onChange={(e) => update("borough", e.target.value)} className="mt-1.5" />
+                  <Label>Borough</Label>
+                  <Select value={form.borough} onValueChange={(v) => update("borough", v)}>
+                    <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select borough" /></SelectTrigger>
+                    <SelectContent>
+                      {BOROUGHS.map((b) => (
+                        <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="neighborhood">Neighborhood</Label>
+                  <Input id="neighborhood" placeholder="e.g. Harlem, Williamsburg" value={form.neighborhood} onChange={(e) => update("neighborhood", e.target.value)} className="mt-1.5" />
                 </div>
               </div>
             </div>
@@ -397,7 +407,7 @@ export function IntakeForm({ onComplete }: IntakeFormProps) {
                   <ReviewItem label="Stage" value={BUSINESS_STAGES.find((s) => s.value === form.businessStage)?.label || "—"} />
                   <ReviewItem label="Industry" value={form.businessType || "—"} />
                   <ReviewItem label="Employees" value={form.employeeCount || "—"} />
-                  <ReviewItem label="Location" value={form.borough || "—"} />
+                  <ReviewItem label="Location" value={[form.neighborhood, form.borough].filter(Boolean).join(", ") || "—"} />
                 </ReviewSection>
                 <ReviewSection title="Support Needs">
                   <div className="flex flex-wrap gap-2">
