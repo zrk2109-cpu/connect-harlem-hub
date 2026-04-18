@@ -14,6 +14,7 @@ export function getEmptyForm(): IntakeFormData {
     businessType: "",
     employeeCount: "",
     borough: "",
+    neighborhood: "",
     supportNeeds: [],
     biggestChallenge: "",
     urgency: "",
