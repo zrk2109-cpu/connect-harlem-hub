@@ -1,7 +1,9 @@
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import type { IntakeFormData } from "@/lib/types";
 import { SUPPORT_OPTIONS, BUSINESS_STAGES, URGENCY_OPTIONS, determineTier } from "@/lib/types";
 import { getEmptyForm, saveFormProgress, loadFormProgress, clearFormProgress, addSubmission } from "@/lib/store";
+import { submitToAirtable } from "@/server/airtable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,10 +76,46 @@ export function IntakeForm({ onComplete }: IntakeFormProps) {
     saveFormProgress(form, newStep);
   };
 
-  const submit = () => {
-    addSubmission(form);
-    clearFormProgress();
-    onComplete(form);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    const tierResult = determineTier(form);
+    try {
+      await submitToAirtable({
+        data: {
+          fullName: form.fullName,
+          businessName: form.businessName,
+          email: form.email,
+          phone: form.phone,
+          preferredContact: form.preferredContact,
+          businessStage: form.businessStage,
+          businessType: form.businessType,
+          employeeCount: form.employeeCount,
+          borough: form.borough,
+          supportNeeds: form.supportNeeds,
+          biggestChallenge: form.biggestChallenge,
+          urgency: form.urgency,
+          workedWithHcc: form.workedWithHcc,
+          previousService: form.previousService,
+          tier: tierResult.tier,
+        },
+      });
+      addSubmission(form);
+      clearFormProgress();
+      toast.success("Thank you! We received your request.");
+      onComplete(form);
+    } catch (err) {
+      console.error("Airtable submission failed:", err);
+      toast.error(
+        err instanceof Error
+          ? `Submission failed: ${err.message}`
+          : "Submission failed. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const toggleNeed = (value: string) => {
@@ -396,8 +434,8 @@ export function IntakeForm({ onComplete }: IntakeFormProps) {
                 Continue <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button variant="hero" onClick={submit} size="lg" className="gap-2">
-                <Send className="h-4 w-4" /> Submit My Request
+              <Button variant="hero" onClick={submit} size="lg" className="gap-2" disabled={submitting}>
+                <Send className="h-4 w-4" /> {submitting ? "Submitting..." : "Submit My Request"}
               </Button>
             )}
           </div>
