@@ -152,6 +152,7 @@ export const submitToAirtable = createServerFn({ method: "POST" })
 
     // 2. Create Client record
     const clientFields: Record<string, unknown> = {
+      "Created On": new Date().toISOString().slice(0, 10),
       "First Name": firstName,
       "Last Name": lastName,
       Email: data.email,
