@@ -52,18 +52,34 @@ export const submitToAirtable = createServerFn({ method: "POST" })
     if (!token) throw new Error("AIRTABLE_TOKEN is not configured");
     if (!baseId) throw new Error("AIRTABLE_BASE_ID is not configured");
 
+    // Split full name into first / last
+    const trimmed = data.fullName.trim().replace(/\s+/g, " ");
+    const parts = trimmed.split(" ");
+    const firstName = parts[0] ?? "";
+    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : "";
+
+    const hasPriorHcc =
+      data.workedWithHcc === "yes"
+        ? "Yes"
+        : data.workedWithHcc === "no"
+          ? "No"
+          : data.workedWithHcc === "not-sure"
+            ? "Not Sure"
+            : "";
+
     // 1. Create Client record
     const clientRes = await airtableRequest(baseId, token, "Clients", {
       fields: {
-        "Full Name": data.fullName,
-        "Business Name": data.businessName,
+        "First Name": firstName,
+        "Last Name": lastName,
         Email: data.email,
         Phone: data.phone,
-        "Preferred Contact": data.preferredContact,
+        "Business Name": data.businessName,
         "Business Stage": data.businessStage,
-        "Business Type": data.businessType,
-        "Employee Count": data.employeeCount,
         Borough: data.borough,
+        "Has Prior HCC Engagement": hasPriorHcc,
+        Industry: data.businessType,
+        Neighborhood: data.borough,
       },
       typecast: true,
     });
@@ -71,18 +87,20 @@ export const submitToAirtable = createServerFn({ method: "POST" })
     const clientId: string = clientRes?.id;
     if (!clientId) throw new Error("Airtable Clients: no record ID returned");
 
+    const submissionName = `${trimmed || data.email} — ${new Date().toISOString().slice(0, 10)}`;
+
     // 2. Create Intake_Submissions record linked to client
     const submissionRes = await airtableRequest(baseId, token, "Intake_Submissions", {
       fields: {
+        "Submission Name": submissionName,
         Client: [clientId],
-        "Support Needs": data.supportNeeds,
-        "Biggest Challenge": data.biggestChallenge,
-        Urgency: data.urgency,
-        "Worked With HCC": data.workedWithHcc,
-        "Previous Service": data.previousService,
-        Tier: data.tier,
         Status: "Submitted",
-        "Submitted At": new Date().toISOString(),
+        "Is Draft": false,
+        "Urgency Level": data.urgency,
+        "Biggest Challenge": data.biggestChallenge,
+        "Source Channel": "Web Intake Form",
+        "Submission Date": new Date().toISOString(),
+        "Service Needs": data.supportNeeds,
       },
       typecast: true,
     });
