@@ -52,20 +52,27 @@ const HCC_MAP: Record<string, string> = {
   "not-sure": "Not sure",
 };
 
-// Form support-need value -> Airtable Service_Needs Label (must match exactly)
-const SERVICE_NEED_LABEL_MAP: Record<string, string> = {
-  planning: "Business Planning & Strategy Support",
-  financial: "Financial Management & Accounting Support",
-  capital: "Access to Capital & Financing Support",
-  workforce: "People, Hiring & Workforce Support",
-  marketing: "Marketing & Customer Outreach Support",
-  sales: "Sales & Revenue Growth Support",
-  operations: "Operations & Day-to-Day Business Support",
-  legal: "Legal, Compliance & Contracts Support",
-  technology: "Technology & Digital Tools Support",
-  other: "Other",
+const TIER_LABEL_MAP: Record<string, string> = {
+  tier1: "Foundational",
+  tier2: "Targeted",
+  tier3: "Ongoing",
 };
 
+// FIX 2: Hardcoded Service Need Record IDs — no live fetch, no fragile label matching
+const SERVICE_NEED_ID_MAP: Record<string, string> = {
+  planning:   "recQhI30si23KCUxn",
+  financial:  "recGAlPpcr6Cs7Go4",
+  capital:    "recoOmoSDUXBcDGyi",
+  workforce:  "recdtXys0jWUzq8su",
+  marketing:  "recIrffknVD5uKc2I",
+  sales:      "rec780jJeUDGJFCUg",
+  operations: "recKQTLeIeVcf188O",
+  legal:      "recFAeO4PqdQ4RxwQ",
+  technology: "reczcVWXVyLz7Dgss",
+  other:      "recusUJAOQG0jHLoM",
+};
+
+// --- Core Airtable request helper ---
 async function airtableRequest(
   baseId: string,
   token: string,
@@ -83,11 +90,7 @@ async function airtableRequest(
   });
   const text = await res.text();
   let data: any = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    /* keep raw text */
-  }
+  try { data = text ? JSON.parse(text) : null; } catch { /* keep raw */ }
   if (!res.ok) {
     const msg = data?.error?.message || data?.error || text || res.statusText;
     const err = `Airtable ${table} [${res.status}]: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`;
@@ -97,33 +100,20 @@ async function airtableRequest(
   return data;
 }
 
-async function fetchServiceNeedIds(
+// FIX 1: Find existing client by email — returns record ID or null
+async function findClientByEmail(
   baseId: string,
   token: string,
-  labels: string[],
-): Promise<string[]> {
-  if (labels.length === 0) return [];
-  // Build OR(...) filter on {Label}
-  const orParts = labels.map((l) => `{Label}="${l.replace(/"/g, '\\"')}"`);
-  const formula = orParts.length === 1 ? orParts[0] : `OR(${orParts.join(",")})`;
-  const query = `filterByFormula=${encodeURIComponent(formula)}&pageSize=100`;
-  const res = await airtableRequest(baseId, token, "Service_Needs", {
+  email: string,
+): Promise<string | null> {
+  const formula = `{Email}="${email.replace(/"/g, '\\"')}"`;
+  const query = `filterByFormula=${encodeURIComponent(formula)}&pageSize=1`;
+  const res = await airtableRequest(baseId, token, "Clients", {
     method: "GET",
     query,
   });
-  const records: Array<{ id: string; fields: Record<string, unknown> }> = res?.records ?? [];
-  const byLabel = new Map<string, string>();
-  for (const rec of records) {
-    const label = String(rec.fields["Label"] ?? "");
-    if (label) byLabel.set(label, rec.id);
-  }
-  const ids: string[] = [];
-  for (const l of labels) {
-    const id = byLabel.get(l);
-    if (id) ids.push(id);
-    else console.warn(`Service_Needs: no record found for Label="${l}"`);
-  }
-  return ids;
+  const records: Array<{ id: string }> = res?.records ?? [];
+  return records.length > 0 ? records[0].id : null;
 }
 
 export const submitToAirtable = createServerFn({ method: "POST" })
@@ -134,48 +124,57 @@ export const submitToAirtable = createServerFn({ method: "POST" })
     if (!token) throw new Error("AIRTABLE_TOKEN is not configured");
     if (!baseId) throw new Error("AIRTABLE_BASE_ID is not configured");
 
-    // Split full name on first space
+    // Split full name
     const trimmed = data.fullName.trim().replace(/\s+/g, " ");
     const firstSpace = trimmed.indexOf(" ");
     const firstName = firstSpace === -1 ? trimmed : trimmed.slice(0, firstSpace);
     const lastName = firstSpace === -1 ? "" : trimmed.slice(firstSpace + 1);
+    const fullName = [firstName, lastName].filter(Boolean).join(" ").trim() || data.email;
 
     const businessStageMapped = BUSINESS_STAGE_MAP[data.businessStage] ?? "";
     const urgencyMapped = URGENCY_MAP[data.urgency] ?? "";
     const hasPriorHcc = HCC_MAP[data.workedWithHcc] ?? "";
+    const tierLabel = TIER_LABEL_MAP[data.tier] ?? data.tier;
+    const priority = PRIORITY_MAP[urgencyMapped] ?? "Medium";
+    const today = new Date().toISOString().slice(0, 10);
 
-    // 1. Resolve Service_Needs record IDs by Label
-    const labels = data.supportNeeds
-      .map((v) => SERVICE_NEED_LABEL_MAP[v])
-      .filter((l): l is string => Boolean(l));
-    const serviceNeedIds = await fetchServiceNeedIds(baseId, token, labels);
+    // FIX 2: Map support needs to hardcoded Record IDs — fast, no API call needed
+    const serviceNeedIds = data.supportNeeds
+      .map((v) => SERVICE_NEED_ID_MAP[v])
+      .filter((id): id is string => Boolean(id));
 
-    // 2. Create Client record
-    const clientFields: Record<string, unknown> = {
-      "Created On": new Date().toISOString().slice(0, 10),
-      "First Name": firstName,
-      "Last Name": lastName,
-      Email: data.email,
-      Phone: data.phone,
-      "Business Name": data.businessName,
-      "Business Stage": businessStageMapped,
-      "Employee Count Range": data.employeeCount,
-      Borough: data.borough,
-      Neighborhood: data.neighborhood,
-      Industry: data.businessType,
-      "Has Prior HCC Engagement": hasPriorHcc,
-      "Prior Service Details": data.previousService,
-    };
-    const clientRes = await airtableRequest(baseId, token, "Clients", {
-      method: "POST",
-      body: { fields: clientFields, typecast: true },
-    });
-    const clientId: string = clientRes?.id;
-    if (!clientId) throw new Error("Airtable Clients: no record ID returned");
+    // STEP 1: Find or create Client (FIX 1 — deduplication)
+    let clientId = await findClientByEmail(baseId, token, data.email);
+    if (!clientId) {
+      const clientRes = await airtableRequest(baseId, token, "Clients", {
+        method: "POST",
+        body: {
+          fields: {
+            "First Name": firstName,
+            "Last Name": lastName,
+            Email: data.email,
+            Phone: data.phone,
+            "Preferred Contact Method": data.preferredContact, // FIX 4
+            "Business Name": data.businessName,
+            "Business Stage": businessStageMapped,
+            "Employee Count Range": data.employeeCount,
+            Borough: data.borough,
+            Neighborhood: data.neighborhood,
+            Industry: data.businessType,
+            "Has Prior HCC Engagement": hasPriorHcc,
+            "Prior Service Details": data.previousService,
+            "Created On": today,
+          },
+          typecast: true,
+        },
+      });
+      clientId = clientRes?.id;
+      if (!clientId) throw new Error("Airtable Clients: no record ID returned");
+    }
 
-    // 3. Create Intake_Submissions record linked to client
-    const submissionName = `${trimmed || data.email} — ${new Date().toISOString().slice(0, 10)}`;
-    const submissionRes = await airtableRequest(baseId, token, "Intake_Submissions", {
+    // STEP 2: Create Intake Submission linked to Client
+    const submissionName = `${fullName} — ${today}`;
+    const submissionRes = await airtableRequest(baseId, token, "Intake Submissions", {
       method: "POST",
       body: {
         fields: {
@@ -186,19 +185,20 @@ export const submitToAirtable = createServerFn({ method: "POST" })
           "Urgency Level": urgencyMapped,
           "Biggest Challenge": data.biggestChallenge,
           "Source Channel": "Website",
+          "Recommended Tier": tierLabel, // FIX 3
+          "Assigned Tier": tierLabel,    // FIX 3
           "Submission Date": new Date().toISOString(),
           "Service Needs": serviceNeedIds,
+          "Raw Form Data": JSON.stringify(data), // FIX 5
         },
         typecast: true,
       },
     });
     const submissionId: string = submissionRes?.id;
-    if (!submissionId) throw new Error("Airtable Intake_Submissions: no record ID returned");
+    if (!submissionId) throw new Error("Airtable Intake Submissions: no record ID returned");
 
-    // 4. Create Cases record
-    const today = new Date().toISOString().slice(0, 10);
-    const caseName = `CASE - ${[firstName, lastName].filter(Boolean).join(" ").trim() || data.email}`;
-    const priority = PRIORITY_MAP[urgencyMapped] ?? "";
+    // STEP 3: Create Case linked to Client + Submission
+    const caseName = `CASE — ${fullName}`;
     const caseRes = await airtableRequest(baseId, token, "Cases", {
       method: "POST",
       body: {
@@ -213,11 +213,14 @@ export const submitToAirtable = createServerFn({ method: "POST" })
         typecast: true,
       },
     });
+    const caseId: string = caseRes?.id;
+    if (!caseId) throw new Error("Airtable Cases: no record ID returned");
 
     return {
       success: true as const,
       clientId,
       submissionId,
-      caseId: caseRes?.id as string,
+      caseId,
+      isExistingClient: !!clientId,
     };
   });
