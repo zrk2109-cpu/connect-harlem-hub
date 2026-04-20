@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { getAirtableConfig } from "./airtable-config";
+
 const SubmissionSchema = z.object({
   fullName: z.string().min(1).max(200),
   businessName: z.string().max(200).optional().default(""),
@@ -104,11 +106,12 @@ async function airtableRequest(
 async function findClientByEmail(
   baseId: string,
   token: string,
+  table: string,
   email: string,
 ): Promise<string | null> {
   const formula = `{Email}="${email.replace(/"/g, '\\"')}"`;
   const query = `filterByFormula=${encodeURIComponent(formula)}&pageSize=1`;
-  const res = await airtableRequest(baseId, token, "Clients", {
+  const res = await airtableRequest(baseId, token, table, {
     method: "GET",
     query,
   });
@@ -119,8 +122,7 @@ async function findClientByEmail(
 export const submitToAirtable = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => SubmissionSchema.parse(input))
   .handler(async ({ data }) => {
-    const token = process.env.AIRTABLE_TOKEN;
-    const baseId = process.env.AIRTABLE_BASE_ID;
+    const { token, baseId, tables } = getAirtableConfig();
     if (!token) throw new Error("AIRTABLE_TOKEN is not configured");
     if (!baseId) throw new Error("AIRTABLE_BASE_ID is not configured");
 
@@ -144,9 +146,9 @@ export const submitToAirtable = createServerFn({ method: "POST" })
       .filter((id): id is string => Boolean(id));
 
     // STEP 1: Find or create Client (FIX 1 — deduplication)
-    let clientId = await findClientByEmail(baseId, token, data.email);
+    let clientId = await findClientByEmail(baseId, token, tables.clients, data.email);
     if (!clientId) {
-      const clientRes = await airtableRequest(baseId, token, "Clients", {
+      const clientRes = await airtableRequest(baseId, token, tables.clients, {
         method: "POST",
         body: {
           fields: {
@@ -174,7 +176,7 @@ export const submitToAirtable = createServerFn({ method: "POST" })
 
     // STEP 2: Create Intake Submission linked to Client
     const submissionName = `${fullName} — ${today}`;
-    const submissionRes = await airtableRequest(baseId, token, "Intake Submissions", {
+    const submissionRes = await airtableRequest(baseId, token, tables.submissions, {
       method: "POST",
       body: {
         fields: {
@@ -199,7 +201,7 @@ export const submitToAirtable = createServerFn({ method: "POST" })
 
     // STEP 3: Create Case linked to Client + Submission
     const caseName = `CASE — ${fullName}`;
-    const caseRes = await airtableRequest(baseId, token, "Cases", {
+    const caseRes = await airtableRequest(baseId, token, tables.cases, {
       method: "POST",
       body: {
         fields: {
